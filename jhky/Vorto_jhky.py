@@ -45,7 +45,7 @@ def download_module_file():
         return existing_modules[0]
     
     # 构建GitHub目录URL - 简化版，直接指向模块目录
-    github_dir_url = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{REPO_NAME}/{BRANCH}/build/{MODULE_NAME}/"
+    github_dir_url = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{REPO_NAME}/{BRANCH}/{MODULE_NAME}/"
     
     # 获取当前平台信息，用于记录
     system, machine, python_version = get_platform_info()
