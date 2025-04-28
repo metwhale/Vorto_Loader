@@ -11,8 +11,6 @@ import shutil
 import glob
 import ssl
 import time
-import inspect
-import ctypes
 
 # GitHub存储编译后.so文件的仓库信息
 GITHUB_USERNAME = "metwhale"
@@ -150,44 +148,6 @@ def download_module_file():
         print(f"目标路径: {module_dir}")
         sys.exit(1)
 
-def find_function_in_module(module, function_name):
-    """在模块中查找函数，尝试多种方法"""
-    # 方法1：直接从模块属性获取
-    if hasattr(module, function_name):
-        return getattr(module, function_name)
-    
-    # 方法2：查找以模块名开头的函数（Cython常见模式）
-    if hasattr(module, f"{module.__name__}_{function_name}"):
-        return getattr(module, f"{module.__name__}_{function_name}")
-    
-    # 方法3：查找所有函数
-    for name in dir(module):
-        if name.endswith(f"_{function_name}") or name.endswith(".{function_name}"):
-            func = getattr(module, name)
-            if callable(func):
-                return func
-    
-    # 方法4：使用动态加载库方法（针对C扩展模块）
-    try:
-        # 检查模块是否有动态加载库属性
-        if hasattr(module, "__file__") and module.__file__:
-            try:
-                # 加载动态库
-                lib = ctypes.CDLL(module.__file__)
-                # 尝试直接获取函数
-                if hasattr(lib, function_name):
-                    return getattr(lib, function_name)
-                # 尝试获取模块名_函数名格式
-                prefixed_name = f"{module.__name__}_{function_name}"
-                if hasattr(lib, prefixed_name):
-                    return getattr(lib, prefixed_name)
-            except Exception as e:
-                print(f"动态库加载函数失败: {e}")
-    except Exception:
-        pass
-    
-    return None
-
 def import_and_run_module(module_path):
     """导入并运行加密模块"""
     try:
@@ -198,54 +158,36 @@ def import_and_run_module(module_path):
         
         print(f"导入模块: {actual_module_name} (文件: {module_filename})")
         
-        # 使用importlib.util导入模块
         spec = importlib.util.spec_from_file_location(actual_module_name, module_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         
-        # 查找入口函数
-        entry_func = find_function_in_module(module, ENTRY_FUNCTION)
-        
-        if entry_func is not None and callable(entry_func):
+        # 尝试调用指定的入口函数
+        if hasattr(module, ENTRY_FUNCTION):
             print(f"正在执行模块的{ENTRY_FUNCTION}函数...")
+            entry_func = getattr(module, ENTRY_FUNCTION)
             result = entry_func()
             return result
         else:
             print(f"警告: 模块{actual_module_name}中没有找到{ENTRY_FUNCTION}函数")
             
-            # 如果没有找到指定的入口函数，尝试查找main函数
-            if ENTRY_FUNCTION != "main":
-                main_func = find_function_in_module(module, "main")
-                if main_func is not None and callable(main_func):
-                    print("找到'main'函数，尝试执行...")
-                    result = main_func()
-                    return result
-            
-            # 列出所有可调用的公共函数
-            public_functions = []
-            for name in dir(module):
-                if not name.startswith('_'):
-                    attr = getattr(module, name)
-                    if callable(attr):
-                        public_functions.append(name)
+            # 如果没有找到指定的入口函数，尝试找出所有可调用的公共函数
+            public_functions = [name for name in dir(module) 
+                               if callable(getattr(module, name)) 
+                               and not name.startswith('_')]
             
             if public_functions:
                 print(f"可用的公共函数: {', '.join(public_functions)}")
                 
-                # 如果有其他函数，提示用户可以尝试的函数
-                for name in public_functions:
-                    print(f"  - {name}")
-                
-                # 提示可以更新配置
-                print(f"\n如需使用其他函数作为入口点，请在配置文件的[Module]部分更新entry_function设置")
-            else:
-                print("模块中没有找到任何公共函数")
+                # 如果找到了main函数但不是指定的入口函数，询问是否要执行它
+                if 'main' in public_functions and ENTRY_FUNCTION != 'main':
+                    print(f"找到'main'函数，尝试执行...")
+                    result = module.main()
+                    return result
             
             return None
     except Exception as e:
         print(f"运行模块时出错: {e}")
-        import traceback
-        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
