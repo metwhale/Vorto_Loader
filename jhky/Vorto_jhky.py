@@ -18,7 +18,10 @@ MODULE_NAME = "jhky"
 
 # 代理设置
 PROXY_ENABLED = false
-PROXY_URL = "https://ghproxy.com/"
+PROXY_URL = "https://gh.885666.xyz/"
+
+# 安全设置
+VERIFY_SSL = False  # 设置为False可以绕过SSL证书验证
 
 def get_platform_info():
     """获取平台信息"""
@@ -69,12 +72,23 @@ def download_module_file():
     else:
         print(f"直接从GitHub下载模块: {download_url}")
     
+    # 创建SSL上下文，可选择是否验证证书
+    if not VERIFY_SSL:
+        ssl_context = ssl._create_unverified_context()
+        print("注意: SSL证书验证已禁用")
+    else:
+        ssl_context = ssl.create_default_context()
+    
     try:
         # 下载到临时文件
         with tempfile.NamedTemporaryFile(delete=False) as temp_file:
             temp_path = temp_file.name
         
-        urllib.request.urlretrieve(download_url, temp_path)
+        # 使用自定义SSL上下文的请求
+        request = urllib.request.Request(download_url)
+        with urllib.request.urlopen(request, context=ssl_context) as response, open(temp_path, 'wb') as out_file:
+            data = response.read()
+            out_file.write(data)
         
         # 本地模块路径
         local_path = os.path.join(module_dir, filename_pattern)
@@ -86,24 +100,49 @@ def download_module_file():
         return local_path
     except Exception as e:
         print(f"下载失败: {e}")
-        if os.path.exists(temp_path):
+        if 'temp_path' in locals() and os.path.exists(temp_path):
             os.remove(temp_path)
         
-        # 尝试使用/不使用代理的方式重试一次
-        if PROXY_ENABLED and PROXY_URL:
-            print("尝试不使用代理直接下载...")
-            try:
-                download_url = download_url.replace(PROXY_URL, "")
-                urllib.request.urlretrieve(download_url, temp_path)
+        # 尝试使用不同方法重试
+        print("尝试使用备用方法下载...")
+        try:
+            # 等待一秒后重试
+            time.sleep(1)
+            
+            # 如果使用代理失败，尝试直接下载
+            if PROXY_ENABLED and PROXY_URL:
+                direct_url = download_url.replace(PROXY_URL, '')
+                print(f"尝试直接下载: {direct_url}")
+                with urllib.request.urlopen(direct_url, context=ssl_context) as response, open(temp_path, 'wb') as out_file:
+                    data = response.read()
+                    out_file.write(data)
+            else:
+                # 如果之前是直接下载，尝试通过curl或wget下载
+                print("尝试使用系统命令下载...")
+                if system == "windows":
+                    # Windows上可能有curl
+                    os.system(f'curl -k -L "{download_url}" -o "{temp_path}"')
+                else:
+                    # Linux/Mac上尝试wget或curl
+                    os.system(f'wget --no-check-certificate -O "{temp_path}" "{download_url}" || ' +
+                              f'curl -k -L "{download_url}" -o "{temp_path}"')
+            
+            # 检查文件是否下载成功
+            if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                # 移动到目标目录
                 shutil.move(temp_path, local_path)
-                print(f"不使用代理下载成功: {local_path}")
+                print(f"使用备用方法下载成功: {local_path}")
                 return local_path
-            except Exception as e2:
-                print(f"重试下载失败: {e2}")
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
+            else:
+                print("备用下载方法失败：文件为空或不存在")
+        except Exception as e2:
+            print(f"备用下载方法也失败: {e2}")
+            if 'temp_path' in locals() and os.path.exists(temp_path):
+                os.remove(temp_path)
         
-        print("无法下载模块文件，请检查网络连接和GitHub仓库是否可访问")
+        print("所有下载尝试均失败，请手动下载文件并放入modules目录")
+        print(f"下载URL: {download_url}")
+        print(f"目标路径: {module_dir}")
         sys.exit(1)
 
 def import_and_run_module(module_path):
