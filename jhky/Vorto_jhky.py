@@ -9,6 +9,8 @@ import platform
 import tempfile
 import shutil
 import glob
+import ssl
+import time
 
 # GitHub存储编译后.so文件的仓库信息
 GITHUB_USERNAME = "metwhale"
